@@ -165,8 +165,7 @@ start:
 			} else {
 				system("cls");
 				std::cout << "ERROR in position write\n";
-				std::cout << "Press enter to close the application...";
-				std::cin.get();
+				system("pause");
 				goto endLoop;
 			}
 			pc.coords[i].x += xer;
@@ -179,8 +178,8 @@ dead:
 			system("cls");
 			std::cout << "You died\n";
 			std::cout << "Points: " << points << "\n";
-			std::cout << "Press enter to close the application...";
 			system("pause");
+			goto menu;
 endLoop:
 			break;
 		}
