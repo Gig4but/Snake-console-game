@@ -1,192 +1,117 @@
+#pragma warning(disable:4244)
 #include <iostream>
-#include <ctime>
 #include <windows.h>
-
-#include "game.h"
+#include <memory>
+#include <chrono>
+#include <thread>
+#include "graphic.h"
+#include "menu.h"
+#include "saves.h"
 #include "snake.h"
-#include "controls.h"
 
-//settings
-int delayS = 200;
-int sizeS = 20;
-char headS = '#';
-char bodyS = 'z';
-char foodS = '$';
+/* GLOBALS */
+//Graphic
+Console cmd;
+std::shared_ptr<Menu*> scene;
+//Input
+Controls input = Controls();
+//Game Environment
+bool run = true;
+std::pair<time_t, time_t> timer = { 0, 0 }; // new, last
+constexpr unsigned int fps_limit = 45;
+constexpr unsigned int tickDelay = 1000/fps_limit; //in ms
+unsigned int tick = 0; //tick counter
+unsigned int sec = 0; //second: 0 - 1000
+unsigned int tps = fps_limit; //ticks per second
+unsigned int tickDelta = 0;
+bool resetControls = false;
+//Game Settings
+vector2D size = { 16, 16 };
+unsigned int minspeed = 5;
+unsigned int obstaclesLimit = size.x/4;
+unsigned int foodLimit = 3;
+unsigned int foodRate = 20;
+bool fpscounter = false;
 
+using namespace std::chrono;
+
+/* Main loop */
 int main() {
-menu:
-	while (true) {
-		system("cls");
-		std::cout << "[1] Start\n"
-				  << "[2] Settings\n"
-				  << "[3] Credits\n"
-				  << "[4] Exit\n"
-				  << "Type the number: ";
-		int in = 0;
-		std::cin >> in;
-		switch (in) {
-			case 1:
-				goto start;
-			case 2:
-				while (true) {
-					system("cls");
-					std::cout << "[1] Change delay time\n"
-							  << "[2] Change game array size\n"
-							  << "[3] Change snake head symbol\n"
-							  << "[4] Change snake body symbol\n"
-							  << "[5] Change food symbol\n"
-							  << "[6] Go back\n"
-							  << "Type the number: ";
-					std::cin >> in;
-					switch (in) {
-						case 1:
-							std::cout << "Type new timinig delay (in ms (default: 200)): ";
-							std::cin >> delayS;
-							break;
-						case 2:
-							std::cout << "Type new game array size (default: 20^2): ";
-							std::cin >> sizeS;
-							break;
-						case 3:
-							std::cout << "Type new snake head symbol (default: #): ";
-							std::cin >> headS;
-							break;
-						case 4:
-							std::cout << "Type new snake body symbol (default: z): ";
-							std::cin >> bodyS;
-							break;
-						case 5:
-							std::cout << "Type new food symbol (default: $): ";
-							std::cin >> foodS;
-							break;
-						case 6:
-							goto menu;
-						default:
-							break;
-					}
-				}
-				break;
-			case 3:
-				std::cout << "Code:  Oleg Petruny\tDesign:    Oleg Petruny\n"
-						  << "Sound: Oleg Petruny\tMarketing: Oleg Petruny\n"
-						  << "Special thanks to: Oleg Petruny\n";
-				system("pause");
-				break;
-			case 4:
-				return 0;
-			default:
-				break;
-		}
-	}
-start:
-	srand(time(0));
+	//Initialize first screen
+	scene = std::make_shared<Menu*>(new Menus::Home());
+	(*scene)->AfterConstructor();
 
-	snake pc; //create playable character and set first coords
-	pc.coords[0].x = 1 + rand() % (sizeS-2);
-	pc.coords[0].y = 1 + rand() % (sizeS-2);
-	area field;
-	coordinates food; //creat coords for food
-	food.x = 1 + rand() % (sizeS-2);
-	food.y = 1 + rand() % (sizeS-2);
-
-	int points = 0; //snake length
-	int key = 0;   //keyboard key
-	int xer = 0;  //x mover
-	int yer = 0; //y mover
-
-
-
-	while (true) {
-		if (pc.coords[0].x == food.x && pc.coords[0].y == food.y) { //test if player eat
-			pc.extend(points, key);
-			do {
-				food.x = 1 + rand() % (sizeS-2);
-				food.y = 1 + rand() % (sizeS-2);
-			} while (pc.coords[0].x == food.x && pc.coords[0].y == food.y);
-		}
-
-		std::cout << "Points: " << points << "\n";
-		field.array[pc.coords[0].y][pc.coords[0].x] = headS; //write HEAD to game array
-		for (int i = 1; i <= points; i++) { //write BODYs to game array
-			field.array[pc.coords[i].y][pc.coords[i].x] = bodyS;
-		}
-		field.array[food.y][food.x] = foodS; //write FOOD to game array
-		std::cout << field.draw();
-
-		if (GetAsyncKeyState(KEYUP) || key == KEYUP) { //test holden button
-			key = KEYUP;
-			xer = 0;
-			yer = -1;
-		} else if (GetAsyncKeyState(KEYDOWN)  || key == KEYDOWN) {
-			key = KEYDOWN;
-			xer = 0;
-			yer = 1;
-		}
-		if (GetAsyncKeyState(KEYLEFT)  || key == KEYLEFT) {
-			key = KEYLEFT;
-			xer = -1;
-			yer = 0;
-		} else if (GetAsyncKeyState(KEYRIGHT)  || key == KEYRIGHT) {
-			key = KEYRIGHT;
-			xer = 1;
-			yer = 0;
-		}
+	while (run) {
+		//stabilization
+		timer.second = timer.first;
+		timer.first = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+		tickDelta = timer.first - timer.second;
 		
-		field.array[pc.coords[points].y][pc.coords[points].x] = ' ';
-		pc.coords[0].x += xer;
-		pc.coords[0].y += yer;
-		for (int i = 1; i <= points; i++) {
-			if (pc.coords[0].x == pc.coords[i].x && pc.coords[0].y == pc.coords[i].y) { goto dead; }
+		tick++;
+		sec += tickDelta;
 
-			if (pc.coords[i].x == pc.coords[i-1].x) {
-				xer = 0;
-				if (pc.coords[i].y > pc.coords[i-1].y)
-					yer = -1;
-				else
-					yer = 1;
-			} else if (pc.coords[i].y == pc.coords[i-1].y) {
-				yer = 0;
-				if (pc.coords[i].x > pc.coords[i-1].x)
-					xer = -1;
-				else
-					xer = 1;
-			} else if (yer != 0) {
-				yer = 0;
-				if (pc.coords[i].x > pc.coords[i-1].x)
-					xer = -1;
-				else
-					xer = 1;
-			} else if (xer != 0) {
-				xer = 0;
-				if (pc.coords[i].y > pc.coords[i-1].y)
-					yer = -1;
-				else
-					yer = 1;
-			} else {
-				system("cls");
-				std::cout << "ERROR in position write\n";
-				system("pause");
-				goto endLoop;
-			}
-			pc.coords[i].x += xer;
-			pc.coords[i].y += yer;
-		}
-		
-		if (pc.coords[0].x == 0 || pc.coords[0].x == sizeS-1 || pc.coords[0].y == 0 || pc.coords[0].y == sizeS-1) { goto dead; }
-		if (false) {
-dead:
-			system("cls");
-			std::cout << "You died\n";
-			std::cout << "Points: " << points << "\n";
-			system("pause");
-			goto menu;
-endLoop:
-			break;
+		if (tickDelta < tickDelay)
+			Sleep(tickDelay - tickDelta);
+
+		if (sec > 1000) {
+			tps = tick;
+			tick = 0;
+			sec = 0;
 		}
 
-		Sleep(delayS);
-		system("cls");
+		//graphic
+		(*scene)->Draw(cmd.buffer);
+		if (fpscounter)
+			cmd.buffer.push_back({ sixel("\nFPS: " + std::to_string(tps)) });
+		//cmd.buffer.push_back({ sixel("\nsecond: " + std::to_string(((float)sec)/1000) + "        ")});
+		cmd.update();
+
+		//input
+		input.ProcessInput(tickDelta);
 	}
 
 	return 0;
+}
+
+void death(unsigned int score) {
+	(*scene)->change(std::make_shared<Menu*>(new Menus::Death(score)));
+}
+void save(std::string out) {
+	out += std::to_string(size.x) + " " + std::to_string(size.y) + " " \
+		+ std::to_string(minspeed) + " " + std::to_string(obstaclesLimit) + " " \
+		+ std::to_string(foodLimit) + " " + std::to_string(foodRate) + " " \
+		+ (fpscounter ? "1" : "0") + " \n";
+	Saves::SaveGame(out);
+}
+std::string load(std::vector<std::vector<unsigned int>> in) {
+	std::vector<object>* body = new std::vector<object>();
+	std::vector<object>* obstacles = new std::vector<object>();
+	std::vector<object>* food = new std::vector<object>();
+	Direction dir;
+	unsigned int score;
+	for (size_t i = 0; i < in[0].size(); i += 2) {
+		body->push_back(object('\0', vector2D(in[0][i], in[0][i+1])));
+	}
+	for (size_t i = 0; i < in[1].size(); i += 2) {
+		obstacles->push_back(object('\0', vector2D(in[1][i], in[1][i+1])));
+	}
+	for (size_t i = 0; i < in[2].size(); i += 2) {
+		food->push_back(object('\0', vector2D(in[2][i], in[2][i+1])));
+	}
+	score = in[3][0];
+	dir = (Direction)in[3][1];
+	size = vector2D(in[3][2], in[3][3]);
+	minspeed = in[3][4];
+	obstaclesLimit = in[3][5];
+	foodLimit = in[3][6];
+	foodRate = in[3][7];
+	fpscounter = in[3][8];
+
+	(*scene)->change(std::make_shared<Menu*>(new Menus::Game(body, obstacles, food, score, dir)));
+
+	return "";
+}
+void exit() {
+	run = false;
+	//Saves::SaveGame();
 }
