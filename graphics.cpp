@@ -1,20 +1,28 @@
-#include "graphic.h"
-#include <iostream>
+/************************************************
+ * Hadik, console game "Snake" for Windows
+ *
+ * Created by Oleg Petruny in 2022
+ * like credit program for course Programing C++
+ *
+ * License MIT
+ ************************************************/
 
-//CONSOLE PRESETTINGS
+#include "graphics.h"
+
 Console::Console() {
-    //turn off underscore cursor
+    //* turn off underscore cursor *******************
     CONSOLE_CURSOR_INFO cursorInfo;
     GetConsoleCursorInfo(_hConsole, &cursorInfo);
     cursorInfo.bVisible = false;
     SetConsoleCursorInfo(_hConsole, &cursorInfo);
-
+    //************************************************
 
     //...
+
 }
 
-//https://docs.microsoft.com/en-us/windows/console/clearing-the-screen?redirectedfrom=MSDN
 void Console::clear() {
+    //https://docs.microsoft.com/en-us/windows/console/clearing-the-screen?redirectedfrom=MSDN
     COORD coordScreen = { 0, 0 };    // home for the cursor
     DWORD cCharsWritten;
     CONSOLE_SCREEN_BUFFER_INFO csbi;
@@ -54,13 +62,13 @@ void Console::clear() {
     SetConsoleCursorPosition(_hConsole, coordScreen);
 }
 
-void Console::setCursorPosition(int x, int y) {
+void Console::setCursorPosition(size_t x, size_t y) {
     std::cout.flush();
     COORD coord = { (SHORT)x, (SHORT)y };
     SetConsoleCursorPosition(_hConsole, coord);
 }
 void Console::update() {
-    int colwriten = 0;
+    size_t colwriten = 0;
     for (size_t row = 0; row < buffer.size(); row++) {
         for (size_t col = 0; col < buffer[row].size(); col++) {
             setColor(buffer[row][col].color);
@@ -75,5 +83,5 @@ void Console::update() {
 }
 
 void Console::setColor(Color c) {
-    SetConsoleTextAttribute(_hConsole, c);
+    SetConsoleTextAttribute(_hConsole, (int)c);
 }

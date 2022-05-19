@@ -1,28 +1,16 @@
+/************************************************
+ * Hadik, console game "Snake" for Windows
+ *
+ * Created by Oleg Petruny in 2022
+ * like credit program for course Programing C++
+ *
+ * License MIT
+ ************************************************/
+
 #include "snake.h"
 
-vector2D& vector2D::operator=(const vector2D& other) {
-	if (this == &other)
-		return *this;
-
-	this->x = other.x;
-	this->y = other.y;
-
-	return *this;
-}
-
-object& object::operator=(const object& other) {
-	if (this == &other)
-		return *this;
-
-	this->x = other.x;
-	this->y = other.y;
-	this->c = other.c;
-
-	return *this;
-}
-
 using Rint = std::uniform_int_distribution<std::mt19937::result_type>;
-int Snake::Rand(int from, int to) {
+unsigned int Snake::Rand(unsigned int from, unsigned int to) {
 	static std::random_device dev;
 	static std::mt19937 rng(dev());
 	Rint fromto(from, to);
@@ -30,18 +18,21 @@ int Snake::Rand(int from, int to) {
 }
 
 Snake::Snake() {
-	dir = Direction::Up;
+	score = 0;
+	dir = Direction::Up;	
 	alive = true;
 
-	//set head and tail
-	body[0] = object(snakestyle::head, Rand(1, size.x-1), Rand(1, size.y));
+	static GameSettings& Sett = GameSettings::Get();
+	/* set head and tail ************************/
+	body = std::vector<object>{ object(snakestyle::head), object(snakestyle::tail, 0, 1)};
+	body[0] = object(snakestyle::head, Rand(1, Sett.size.x-1), Rand(1, Sett.size.y));
 	body[1] = object(snakestyle::tail, body[0].x, body[0].y+1);
 
 	vector2D buffer = {0};
 
-	//generate obstacles
-	for (int i = 0; i < (int)obstaclesLimit; i++) {
-		buffer = vector2D(Rand(1, size.x-1), Rand(1, size.y-1));
+	/* generate obstacles ***********************/
+	for (int i = 0; i < (int)Sett.obstaclesLimit; i++) {
+		buffer = vector2D(Rand(1, Sett.size.x-1), Rand(1, Sett.size.y-1));
 		if (buffer == body[0] || buffer == body[1]) {
 			i--;
 			continue;
@@ -49,33 +40,34 @@ Snake::Snake() {
 		obstacles.push_back(object(snakestyle::obstacles[Rand(0, sizeof(snakestyle::obstacles) / sizeof(char) - 1)], buffer));
 	}
 
-	//generate obstacles
+	/* generate food ****************************/
 	spawnFood();
 }
-Snake::Snake(std::vector<object>& body, std::vector<object>& food, std::vector<object>& obstacles, unsigned int score, Direction direction) {
-	dir = direction;
-	alive = true;
-	this->score = score;
 
-	this->body = body;
+Snake::Snake(std::unique_ptr<function> death) : Snake() {
+	death = std::move(death);
+}
+
+Snake::Snake(std::vector<object>& body, std::vector<object>& food, std::vector<object>& obstacles, Direction& direction, unsigned int score, std::unique_ptr<function> death) \
+	: body(std::move(body)), food(std::move(food)), obstacles(std::move(obstacles)), dir(std::move(direction)), score(score), death(std::move(death)) {
+	alive = true;
+
 	this->body[0].c = snakestyle::head;
 	for (size_t i = 1; i < this->body.size()-1; i++) {
 		this->body[i].c = snakestyle::body;
 	}
-	this->body[body.size()-1].c = snakestyle::tail;
+	this->body[this->body.size()-1].c = snakestyle::tail;
 
-	this->obstacles = obstacles;
-	for (size_t i = 0; i < this->obstacles.size(); i++) {
-		this->obstacles[i].c = snakestyle::obstacles[Rand(0, sizeof(snakestyle::obstacles) / sizeof(char) - 1)];
-	}
-	
-	this->food = food;
 	for (size_t i = 0; i < this->food.size(); i++) {
 		this->food[i].c = snakestyle::food[Rand(0, sizeof(snakestyle::food) / sizeof(char) - 1)];
 	}
+
+	for (size_t i = 0; i < this->obstacles.size(); i++) {
+		this->obstacles[i].c = snakestyle::obstacles[Rand(0, sizeof(snakestyle::obstacles) / sizeof(char) - 1)];
+	}
 }
 
-//copy-paste loops reduction
+// copy-paste loops reduction
 std::string _export(std::vector<object>& what) {
 	std::string out;
 	for (size_t i = 0; i < what.size(); i++) {
@@ -86,20 +78,20 @@ std::string _export(std::vector<object>& what) {
 	return out;
 }
 
-std::string Snake::saveexport() {
+std::string Snake::ToString() {
 	return _export(body) + _export(obstacles) + _export(food) + std::to_string(score) + " " + std::to_string((int)dir) + " ";
 }
 
-bool Snake::colisions(bool& growth) {
+bool Snake::collisions(bool& growth) {
 	for (int i = 0; i < obstacles.size(); i++) {
 		if (body[0] == obstacles[i]) {
-			Death();
+			death->invoke();
 			return true;
 		}
 	}
-	for (int i = 1; i < body.size(); i++) {
+	for (int i = 1; i < body.size()-1; i++) {
 		if (body[0] == body[i]) {
-			Death();
+			death->invoke();
 			return true;
 		}
 	}
@@ -117,16 +109,17 @@ bool Snake::colisions(bool& growth) {
 
 bool Snake::move() {
 	object buffer[2] = {body[0], body[0]};
+	static GameSettings& Sett = GameSettings::Get();
 
 	switch (dir) {
 		case Direction::Up:
 			if (body[0].y > 0)
 				body[0].y--;
 			else
-				body[0].y = size.y-1;
+				body[0].y = Sett.size.y-1;
 			break;
 		case Direction::Down:
-			if (body[0].y < size.y-1)
+			if (body[0].y < Sett.size.y-1)
 				body[0].y++;
 			else
 				body[0].y = 0;
@@ -135,10 +128,10 @@ bool Snake::move() {
 			if (body[0].x > 0)
 				body[0].x--;
 			else
-				body[0].x = size.x-1;
+				body[0].x = Sett.size.x-1;
 			break;
 		case Direction::Right:
-			if (body[0].x < size.x-1)
+			if (body[0].x < Sett.size.x-1)
 				body[0].x++;
 			else
 				body[0].x = 0;
@@ -148,13 +141,13 @@ bool Snake::move() {
 	}
 
 	bool growth = true;
-	if (colisions(growth)) {
+	if (collisions(growth)) {
 		alive = false;
 		return false;
 	}
 	
 	
-	for (int i = 1; i < body.size(); i++) {
+	for (size_t i = 1; i < body.size(); i++) {
 		if (body[i-1].c == snakestyle::fat && growth) {
 			growth = false;
 			body[i-1].c = snakestyle::body;
@@ -175,10 +168,11 @@ bool Snake::move() {
 }
 
 void Snake::spawnFood() {
+	static GameSettings& Sett = GameSettings::Get();
 	vector2D buffer;
 	bool duplicate = false;
 	while (true) {
-		buffer = { Rand(1, size.x-1), Rand(1, size.y-1) };
+		buffer = { (int)Rand(1, Sett.size.x-1), (int)Rand(1, Sett.size.y-1) };
 		for (auto it = food.begin(); it != food.end(); it++)
 			if (*it == buffer)
 				duplicate = true;
@@ -190,23 +184,25 @@ void Snake::spawnFood() {
 }
 
 void Snake::Draw(std::vector<std::vector<sixel>>& buffer) {
-	if (waiter < (tps-score)) {
+	GameEnvironment& Env = GameEnvironment::Get();
+	static GameSettings& Sett = GameSettings::Get();
+	if (waiter < (Env.tps - score)) {
 		waiter++;
 	} else {
 		waiter = 0;
-		move();
-
-		if (food.size() < foodLimit && Rand(0, 100) < foodRate) {
-			spawnFood();
+		if (move()) {
+			if (food.size() < Sett.foodLimit && Rand(0, 100) * Sett.randomFinest < Sett.foodRate) {
+				spawnFood();
+			}
 		}
 	}
 
 	
 	if (alive) {
 		size_t firstrow = buffer.size();
-		for (int y = 0; y < size.y+1; y++) {
+		for (int y = 0; y < Sett.size.y+1; y++) {
 			buffer.push_back({});
-			for (int x = 0; x < size.x+1; x++) {
+			for (int x = 0; x < Sett.size.x+1; x++) {
 				buffer[firstrow+y].push_back(sixel(" "));
 			}
 		}
